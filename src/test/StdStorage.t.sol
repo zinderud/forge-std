@@ -294,7 +294,7 @@ contract StdStorageTest is Test {
 
             uint256 readVal = stdstore.target(address(test))
                     .enabledPackedSlots(true)
-                    .sig(test.getRandomPacked.selector)
+                    .sig("getRandomPacked(uint8,uint8[],uint8)")
                     .with_calldata(abi.encode(shifts, shiftSizes, elemToGet))
                     .read_uint();
 
@@ -303,6 +303,57 @@ contract StdStorageTest is Test {
                 readVal,
                 expectedValToRead
             );    
+        }
+    }
+
+    function testFuzzPacked2(uint256 nvars, uint256 seed) public {
+        // Number of random variables to generate.
+        // TODO increase upper bound, limiting to 2 right now to simplify debugging / reduce test time.
+        nvars = bound(nvars, 2, 2); 
+
+        // This will decrease as we generate values in the below loop.
+        uint256 bitsRemaining = 256;
+
+        // Generate a random value and size for each variable.
+        uint256[] memory vals = new uint256[](nvars);
+        uint256[] memory sizes = new uint256[](nvars);
+        uint256[] memory offsets = new uint256[](nvars);
+
+        for (uint256 i = 0; i < nvars; i++) {
+            // Generate a random value and size.
+            uint256 nvarsRemaining = nvars - i;
+            uint256 maxVarSize = bitsRemaining - nvarsRemaining + 1;
+
+            uint256 size = bound(uint256(keccak256(abi.encodePacked(seed, i + 256))), 1, maxVarSize);
+            uint256 maxVal = (1 << size) - 1; // Equal to (2 ** size) - 1, but won't revert on overflow for 256 bits.
+
+            sizes[i] = size;
+            offsets[i] = i == 0 ? 0 : offsets[i - 1] + sizes[i - 1];
+            vals[i] = bound(uint256(keccak256(abi.encodePacked(seed, i))), 0, maxVal);
+            bitsRemaining -= size;
+        }
+
+        // Pack all values into the slot.
+        for (uint256 i = 0; i < nvars; i++) {
+            // Passes with this.
+            // test.setRandomPacking(vals[i], sizes[i], offsets[i]);
+
+            // Fails with this.
+            stdstore.target(address(test))
+                .enabledPackedSlots(true)
+                .sig("getRandomPacked(uint8,uint8)")
+                .with_calldata(abi.encode(sizes[i], offsets[i]))
+                .checked_write(vals[i]);
+        }
+
+        // Verify the read data matches.
+        for (uint256 i = 0; i < nvars; i++) {
+            uint256 readVal = stdstore.target(address(test))
+                .enabledPackedSlots(true)
+                .sig("getRandomPacked(uint8,uint8)")
+                .with_calldata(abi.encode(sizes[i], offsets[i]))
+                .read_uint();
+            assertEq(readVal, vals[i]);
         }
     }
 
@@ -403,6 +454,15 @@ contract StorageTest {
         randomPacking = val;
     }
 
+    function setRandomPacking(uint256 val, uint256 size, uint256 offset) public {
+        // Generate mask based on the size of the value
+        uint256 mask = (1 << size) - 1;
+        // Zero out all bits for the word we're about to set
+        uint256 cleanedWord = uint256(randomPacking) & ~(mask << offset);
+        // Place val in the correct spot of the cleaned word
+        randomPacking = cleanedWord | val << offset;
+    }
+
     function packedStructA() public view returns (uint128) {
         return packed_struct.a;
     }
@@ -429,5 +489,12 @@ contract StorageTest {
 
         // clear left bits, then clear right bits and realign
         return (randomPacking << leftBits) >> (leftBits + rightBits);
+    }
+
+    function getRandomPacked(uint8 size, uint8 offset) public returns (uint256) {
+        // Generate mask based on the size of the value
+        uint256 mask = (1 << size) - 1;
+        // Shift to place the bits in the correct position, and use mask to zero out remaining bits
+        return uint256(randomPacking >> offset) & mask;
     }
 }
