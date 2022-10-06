@@ -807,6 +807,13 @@ abstract contract Test is DSTest, Script {
 
     }
 
+    function readInput(string memory input) internal returns (string memory) {
+        string memory inputDir = string.concat(vm.projectRoot(), "/script/input/");
+        string memory chainDir = string.concat(vm.toString(block.chainid), "/");
+        string memory file = string.concat(input, ".json");
+        return vm.readFile(string.concat(inputDir, chainDir, file));
+    }
+
     function bytesToUint(bytes memory b) internal pure returns (uint256){
             uint256 number;
             for (uint i=0; i < b.length; i++) {

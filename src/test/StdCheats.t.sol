@@ -247,6 +247,17 @@ contract StdCheatsTest is Test {
         Receipt[] memory receipts = readReceipts(path);
     }
 
+    function testReadInput() public {
+        vm.chainId(10);
+        string memory json = readInput("test");
+        assertEq(json.readString(".network"), "optimism");
+        assertEq(json.readUint(".arbitraryValue"), 123);
+
+        vm.chainId(42161);
+        json = readInput("test");
+        assertEq(json.readString(".network"), "arbitrum");
+        assertEq(json.readUint(".arbitraryValue"), 456);
+    }
 }
 
 contract Bar {
